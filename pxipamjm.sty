@@ -1,0 +1,759 @@
+%
+% pxipamjm.sty
+%
+%% package declaration
+\NeedsTeXFormat{pLaTeX2e}
+\ProvidesPackage{pxipamjm}[2013/12/14 v0.2]
+
+%% preparations
+\def\pxmj@pkgname{pxipamjm}
+\def\pxmj@error{\PackageError\pxmj@pkgname}
+\def\pxmj@warn{\PackageWarning\pxmj@pkgname}
+\def\pxmj@info{\PackageInfo\pxmj@pkgname}
+\providecommand\bxDebug[1]{}
+%
+\newif\ifpxmj@ok
+\newif\ifpxmj@highlight
+\newif\ifpxmj@info
+\newif\ifpxmj@ipamjm
+
+%% code guards
+\edef\pxmj@restore@codes{%
+  \catcode34=\the\catcode34%
+  \catcode39=\the\catcode39%
+  \catcode43=\the\catcode43%
+  \catcode45=\the\catcode45%
+  \catcode46=\the\catcode46%
+  \catcode47=\the\catcode47%
+  \catcode58=\the\catcode58%
+  \catcode60=\the\catcode60%
+  \catcode62=\the\catcode62%
+  \catcode63=\the\catcode63%
+  \catcode96=\the\catcode96%
+\relax}
+\catcode34=12 % <">
+\catcode39=12 % <'>
+\catcode43=12 % <+>
+\catcode45=12 % <->
+\catcode46=12 % <.>
+\catcode47=12 % </>
+\catcode58=12 % <:>
+\catcode60=12 % <<>
+\catcode62=12 % <>>
+\catcode63=12 % <?>
+\catcode96=12 % <`>
+\AtEndOfPackage{%
+\pxmj@restore@codes
+\let\pxmj@restore@codes\@undefined}
+
+%--------------------------------------- environment check
+
+% Checks the engine
+\edef\pxmj@tmpa{\string\ucs}
+\edef\pxmj@tmpb{\meaning\ucs}
+\ifx\pxmj@tmpa\pxmj@tmpb
+  \let\pxmj@uptex=t
+\fi
+
+% Checks the internal kanji code
+\edef\pxmj@tmpa{\string\jis}
+\edef\pxmj@tmpb{\meaning\jis}
+\ifx\pxmj@tmpa\pxmj@tmpb
+  \ifnum     \jis"2121="8140 \let\pxmj@jacode=s
+  \else\ifnum\jis"2121="A1A1 \let\pxmj@jacode=e
+  \else\ifnum\jis"2121="3000 \let\pxmj@jacode=u
+  \fi\fi\fi
+\fi
+\ifx\pxmj@jacode\@undefined
+  \pxmj@error{The engine in use is not pTeX\MessageBreak
+    (or unknown kanji code settings used)}\@ehc
+\expandafter\endinput\fi\relax
+
+% prerequisite package
+\RequirePackage{pxipamjm}
+
+%--------------------------------------- errors
+
+\def\pxmj@err@ivnum{%
+  \pxmj@error{Invalid number format}\@ehc
+}
+\def\pxmj@err@ivrng{%
+  \pxmj@error{Number is out of valid range (\the\pxmj@cnta)}%
+  {The value must be in range 0--255.\MessageBreak\@ehc}%
+}
+\def\pxmj@err@ivrngi#1#2#3{%
+  \pxmj@error{Itaiji-id is out of valid range (#1)}%
+  {The value must be in range #2--#3.\MessageBreak\@ehc}%
+}
+\def\pxmj@err@naiid#1#2#3{%
+  \pxmj@error{Itaiji of #1<#2> #3is unavailable}\@ehc
+}
+
+%--------------------------------------- helpers
+
+%% constants
+\chardef\pxmj@iid@lmt=239
+\def\pxmj@min@ivs@code{E0100}
+\def\pxmj@geta@jiscode{222E}
+
+%% variables
+\newcount\pxmj@cnta
+\newcount\pxmj@g@cntr
+
+%% unique tokens
+\def\pxmj@end{\pxmj@end@}
+\def\pxmj@mt{\pxmj@mt@}
+\let\pxmj@nil\relax
+
+%% \pxmj@z : zero as number constant
+\chardef\pxmj@z=0
+
+%% \pxmj@chc@sym
+\def\pxmj@chc@sym{?}
+
+%% \pxmj@exparg
+\def\pxmj@exparg#1{%
+  \expandafter#1\expandafter
+}
+ 
+%% \pxmj@cond\ifXX..\fi{<yes>}{<no>}
+\@gobbletwo\if\if
+\def\pxmj@cond#1\fi{%
+  #1\expandafter\@firstoftwo
+  \else\expandafter\@secondoftwo\fi
+}
+
+%% \pxmj@nan
+\let\pxmj@nan\maxdimen
+
+%% \pxmj@scan@num
+\def\pxmj@scan@num#1{%
+  \afterassignment\pxmj@scan@num@a\pxmj@cnta=#1\pxmj@nil
+}
+\def\pxmj@scan@num@a#1\pxmj@nil{%
+  \ifx\pxmj@mt#1\pxmj@mt\else \pxmj@cnta\pxmj@nan \fi
+}
+
+%% \pxmj@burst-`><token>
+\let\pxmj@burst\romannumeral
+
+%% \pxmj@peek\CONT
+\def\pxmj@peek#1{%
+  \let\pxmj@peek@next=#1%
+  \futurelet\pxmj@ahead\pxmj@peek@a
+}
+\def\pxmj@peek@a{%
+  \ifx\pxmj@ahead\@sptoken \expandafter\pxmj@peek@b
+  \else \expandafter\pxmj@peek@next \fi
+}
+\expandafter\def\expandafter\pxmj@peek@b\space{%
+  \futurelet\pxmj@ahead\pxmj@peek@a
+}
+
+%% \pxmj@xpeek\CONT
+\def\pxmj@xpeek#1{%
+  \let\pxmj@xpeek@next#1%
+  \pxmj@peek\pxmj@xpeek@a
+}
+\def\pxmj@xpeek@a{%
+  \expandafter\pxmj@xpeek@b\pxmj@burst-`>%
+}
+\def\pxmj@xpeek@b{%
+  \futurelet\pxmj@ahead\pxmj@xpeek@next
+}
+
+%% \pxmj@scan@hexnum
+\def\pxmj@scan@hexnum#1{%
+  \let\pxmj@hex\relax
+  \pxmj@xpeek\pxmj@scan@hexnum@a#1\pxmj@nil
+}
+\def\pxmj@scan@hexnum@a{%
+  \pxmj@cond\ifx\pxmj@ahead\pxmj@nil\fi
+  {\pxmj@scan@hexnum@b}{\pxmj@scan@hexnum@c}%
+}
+\def\pxmj@scan@hexnum@b#1\pxmj@nil{%
+  \pxmj@cnta\pxmj@nan
+}
+\def\pxmj@scan@hexnum@c#1{%
+  \pxmj@cond\ifnum2<"1#1 \fi{%
+    \pxmj@scan@hexnum@d#1%
+  }{\afterassignment\pxmj@scan@num@a\pxmj@cnta=#1}%
+}
+\def\pxmj@scan@hexnum@d#1\pxmj@nil{%
+  \pxmj@scan@num{"#1}%
+  \ifnum\pxmj@cnta=\pxmj@nan\else
+    \def\pxmj@hex{#1}%
+  \fi
+}
+
+%% \pxmj@print
+\let\pxmj@print\typeout
+
+%--------------------------------------- option handling
+
+%% options
+\DeclareOption{highlight}{%
+  \pxmj@highlighttrue
+}
+\DeclareOption{nohighlight}{%
+  \pxmj@highlighttrue
+}
+\DeclareOption{info}{%
+  \pxmj@infotrue
+}
+\DeclareOption{noinfo}{%
+  \pxmj@infofalse
+}
+\DeclareOption{ipamjm}{%
+  \pxmj@ipamjmtrue
+}
+\DeclareOption{noipamjm}{%
+  \pxmj@ipamjmfalse
+}
+\ExecuteOptions{ipamjm}
+\ProcessOptions*
+\AtBeginDocument{%
+  \ifpxmj@highlight
+    % checkes if coloring is available
+    \@ifpackageloaded{color}{}{%else
+      \pxmj@error{Package 'color' is not loaded\MessageBreak
+        (Hightlight disabled)}\@ehc
+      \pxmj@highlightfalse
+    }%
+  \fi
+}
+
+%% dependent packages
+\ifpxmj@ipamjm
+\RequirePackage{ipamjm}
+\fi
+
+%--------------------------------------- jachar check
+
+%% probe jachar tokens
+\def\pxmj@next#1#2#3{%
+  \begingroup
+    \@tempcnta=\jis#3\relax
+    \kansujichar1=\@tempcnta
+    \kcatcode\@tempcnta=#2\relax
+    \global\expandafter\let\csname pxmj@speci@#1%
+       \expandafter\endcsname\kansuji1\relax
+  \endgroup
+}
+\pxmj@next{S}{16}{"2123}
+\pxmj@next{K}{17}{"2423}
+\pxmj@next{I}{18}{"3023}
+
+%% \pxmj@check@jachar<token>
+\def\pxmj@check@jachar#1{%
+  \pxmj@okfalse
+  \ifcat\pxmj@speci@S\noexpand#1\pxmj@oktrue\fi
+  \ifcat\pxmj@speci@K\noexpand#1\pxmj@oktrue\fi
+  \ifcat\pxmj@speci@I\noexpand#1\pxmj@oktrue\fi
+}
+
+%--------------------------------------- shadow map
+
+%% \pxmj@shmap\map{<key>}{<offset>}
+% Returns value + offset to \pxmj@g@cntr.
+\mathchardef\pxmj@shmap@rx=256
+\def\pxmj@shmap#1#2#3{%
+  \begingroup
+    \@tempcnta=#2\relax \@tempcntb\@tempcnta
+    \divide\@tempcntb\pxmj@shmap@rx \chardef\pxmj@tmpa\@tempcntb
+    \multiply\@tempcntb\pxmj@shmap@rx \advance\@tempcnta-\@tempcntb
+    \chardef\pxmj@tmpb\@tempcnta
+    \setbox\z@\hbox{\kern#3\@ne#1\pxmj@tmpa\pxmj@tmpb}%
+    \global\pxmj@g@cntr\wd\z@
+  \endgroup
+\bxDebug{\fontname#1(\number#2)+\number#3=\number\pxmj@g@cntr}%
+}
+
+%--------------------------------------- mjid mapping
+
+%% constants
+\let\pxmj@plane=\p@ %"10000
+
+%% variables
+\let\pxmj@dcsr\pxmj@z
+\let\pxmj@dcsrx\pxmj@z
+\let\pxmj@iidmin\pxmj@z
+\let\pxmj@iidmax\pxmj@z
+\let\pxmj@chc@seq\@empty
+
+%% \pxmj@get@dcsr@leg{<code>}
+% Sets \pxmj@dcsr. (for legacy encoding)
+\def\pxmj@get@dcsr@leg#1{%
+  \pxmj@cnta=#1\relax
+  \ifnum\pxmj@cnta<\pxmj@plane
+    \pxmj@shmap\pxmj@shmapi\pxmj@cnta\pxmj@z
+    \mathchardef\pxmj@dcsr\pxmj@g@cntr
+  \else \let\pxmj@dcsr\pxmj@z
+  \fi
+}
+
+%% \pxmj@get@dcsr@ucs{<code>}
+% Sets \pxmj@dcsr. (for Unicode)
+\def\pxmj@get@dcsr@ucs#1{%
+  \pxmj@cnta=#1\relax
+  \@tempcnta\pxmj@cnta \divide\@tempcnta\pxmj@plane
+  \ifcase\@tempcnta % 0
+    \pxmj@shmap\pxmj@shmapia\pxmj@cnta\pxmj@z
+  \or % 1
+    \global\pxmj@g@cntr\z@
+  \or % 2
+    \advance\pxmj@cnta-\pxmj@plane
+    \advance\pxmj@cnta-\pxmj@plane
+    \pxmj@shmap\pxmj@shmapic\pxmj@cnta\pxmj@z
+  \else % other
+    \global\pxmj@g@cntr\z@
+  \fi
+  \mathchardef\pxmj@dcsr\pxmj@g@cntr
+}
+
+%% \pxmj@load@shmap@tfm
+\let\pxmj@load@shmap@tfm\relax  % defined later
+
+%% \pxmj@get@range{<ucs>}{<code>}
+% Sets \pxmj@iidmin, \pxmj@iidmax, and \pxmj@dcsrx.
+\def\pxmj@get@range#1#2{%
+  \pxmj@load@shmap@tfm
+  \if t#1\pxmj@get@dcsr@ucs{#2}%
+  \else  \pxmj@get@dcsr@leg{#2}%
+  \fi
+  \ifnum\pxmj@dcsr>\z@
+    \pxmj@cnta\pxmj@dcsr \advance\pxmj@cnta-\tw@
+    \pxmj@shmap\pxmj@shmapd\pxmj@cnta\pxmj@z \chardef\pxmj@iidmin\pxmj@g@cntr
+    \advance\pxmj@g@cntr\@ne \chardef\pxmj@tmpc\pxmj@g@cntr
+    \pxmj@cnta\pxmj@dcsr \advance\pxmj@cnta-\@ne
+    \pxmj@shmap\pxmj@shmapd\pxmj@cnta\pxmj@tmpc \chardef\pxmj@iidmax\pxmj@g@cntr
+    \pxmj@cnta\pxmj@dcsr \advance\pxmj@cnta-\pxmj@iidmin
+    \mathchardef\pxmj@dcsrx\pxmj@cnta
+  \else
+    \let\pxmj@iidmin\pxmj@z \let\pxmj@iidmax\pxmj@z
+  \fi
+}
+
+%% \pxmj@get@mjid{<ucs>}{<code>}{<iid>}
+\def\pxmj@get@mjid#1#2#3{%
+  \pxmj@get@range#1{#2}%
+  \global\pxmj@g@cntr\z@
+  \ifnum\pxmj@dcsr>\z@
+    \pxmj@cnta=#3\relax
+    \ifnum\pxmj@cnta<\pxmj@iidmin
+    \else\ifnum\pxmj@cnta>\pxmj@iidmax
+    \else
+      \advance\pxmj@cnta\pxmj@dcsrx
+      \pxmj@shmap\pxmj@shmapd\pxmj@cnta\pxmj@z
+    \fi\fi
+  \fi
+}
+
+%% \pxmj@get@mjid@seq{<ucs>}{<code>}
+\def\pxmj@get@mjid@seq#1#2{%
+  \pxmj@get@range#1{#2}%
+  \let\do\relax \let\pxmj@chc@seq\@empty
+  \ifnum\pxmj@dcsr>\z@
+    \pxmj@cnta\pxmj@iidmin \advance\pxmj@cnta\m@ne
+    \@whilenum\pxmj@cnta<\pxmj@iidmax\do{%
+      \advance\pxmj@cnta\@ne
+      \begingroup
+        \advance\pxmj@cnta\pxmj@dcsrx
+        \pxmj@shmap\pxmj@shmapd\pxmj@cnta\pxmj@z
+      \endgroup
+      \edef\pxmj@chc@seq{\pxmj@chc@seq
+       \do{\the\pxmj@cnta}{\the\pxmj@g@cntr}}%
+    }%
+  \fi
+}
+
+%% adjust
+\ifx s\pxmj@jacode
+  \def\pxmj@load@shmap@tfm{%
+    \global\font\pxmj@shmapi=pxmjshmis
+    \global\font\pxmj@shmapia=pxmjshmia
+    \global\font\pxmj@shmapic=pxmjshmic
+    \global\font\pxmj@shmapd=pxmjshmd
+    \global\let\pxmj@load@shmap@tfm\relax
+  }
+\else\ifx e\pxmj@jacode
+  \def\pxmj@load@shmap@tfm{%
+    \global\font\pxmj@shmapi=pxmjshmie
+    \global\font\pxmj@shmapia=pxmjshmia
+    \global\font\pxmj@shmapic=pxmjshmic
+    \global\font\pxmj@shmapd=pxmjshmd
+    \global\let\pxmj@load@shmap@tfm\relax
+  }
+\else\ifx u\pxmj@jacode
+  \def\pxmj@load@shmap@tfm{%
+    \global\font\pxmj@shmapia=pxmjshmia
+    \global\font\pxmj@shmapic=pxmjshmic
+    \global\font\pxmj@shmapd=pxmjshmd
+    \global\let\pxmj@load@shmap@tfm\relax
+  }
+  \let\pxmj@get@dcsr@leg\pxmj@get@dcsr@ucs
+\fi\fi\fi
+
+%--------------------------------------- user interface
+
+%% constants
+% special iid values
+\mathchardef\pxmj@iid@fb=256
+\mathchardef\pxmj@iid@chc=257
+\mathchardef\pxmj@iid@dflt=258
+
+%% \pxmj@ibase : index base value (pseudovar)
+\let\pxmj@ibase\pxmj@z
+
+%% \pxmj@ucivs@min/\pxmj@ucivs@max
+\let\pxmj@ucivs@min\pxmj@z
+\let\pxmj@ucivs@max\pxmj@z
+\ifx u\pxmj@jacode
+  \pxmj@cnta="\pxmj@min@ivs@code  \kchardef\pxmj@ucivs@min\pxmj@cnta
+  \advance\pxmj@cnta\pxmj@iid@lmt \kchardef\pxmj@ucivs@max\pxmj@cnta
+\fi
+
+%%<*> \MJindexbase{<num>}
+\newcommand*\MJindexbase[1]{%
+  \pxmj@scan@num{#1}%
+  \ifnum\pxmj@cnta=\pxmj@nan \pxmj@err@ivnum
+  \else\ifnum\pxmj@cnta<\z@ \pxmj@err@ivrng
+  \else\ifnum\pxmj@cnta>\@cclv \pxmj@err@ivrng
+  \else \chardef\pxmj@ibase\pxmj@cnta
+  \fi\fi\fi
+}
+
+%%<*> \MJI
+% The user command.
+\newcommand*\MJI{%
+  \@ifstar{\pxmj@mjargd}{\pxmj@mjarga}%
+}
+
+%%<+> \MJByNumber{<mjid>}
+\newcommand*\MJByNumber[1]{%
+  \pxmj@cnta=#1\relax
+  \pxmj@mjmain@id
+}
+
+%%<+> \MJByChar{<iid>}{<kanji>}
+\newcommand*\MJByChar[2]{%
+  \chardef\pxmj@iid=#1\relax
+  \def\pxmj@cbase{#2}\let\pxmj@ucbase\pxmj@z
+  \pxmj@mjmain
+}
+
+%%<+> \MJByUnicode{<iid>}{<code>}
+\newcommand*\MJByUnicode[2]{%
+  \chardef\pxmj@iid=#1\relax
+  \pxmj@cnta=#2\relax\let\pxmj@ucbase\pxmj@cnta
+  \let\pxmj@cbase\relax
+  \pxmj@mjmain
+}
+
+%% \pxmj@mjarga
+% Sets \pxmj@opt.
+\def\pxmj@mjarga{%
+  \pxmj@xpeek\pxmj@mjarga@a
+}
+\def\pxmj@mjarga@a{%
+  \pxmj@cond\ifx\bgroup\pxmj@ahead\fi{%
+    \let\pxmj@opt\@empty \pxmj@mjargb
+  }{\pxmj@cond\if[\pxmj@ahead\fi{%
+    \pxmj@mjarga@d
+  }{\pxmj@mjarga@b}}%
+}
+\def\pxmj@mjarga@b#1{%
+  \pxmj@cond\if\pxmj@chc@sym#1\fi{%
+    \let\pxmj@opt\pxmj@chc@sym\pxmj@mjargb
+  }{\pxmj@cond\ifnum2<1#1 \fi{% #1 is digit
+    \afterassignment\pxmj@mjarga@c\pxmj@cnta#1%
+  }{\pxmj@mjargb#1}}%
+}
+\def\pxmj@mjarga@c{%
+  \def\pxmj@opt{\pxmj@cnta}\pxmj@mjargb
+}
+\def\pxmj@mjarga@d[#1]{%
+  \def\pxmj@opt{#1}\pxmj@mjargb
+}
+
+%% \pxmj@mjargb{<kanji>}
+\def\pxmj@mjargb{%
+  \let\pxmj@cbase\relax
+  \let\pxmj@ucbase\pxmj@z
+  \let\pxmj@iid\pxmj@iid@fb
+  \let\pxmj@ucivs\pxmj@z
+  %
+  \ifx\pxmj@opt\@empty
+    \let\pxmj@iid\pxmj@iid@dflt
+  \else\ifx\pxmj@opt\pxmj@chc@sym
+    \let\pxmj@iid\pxmj@iid@chc
+  \else
+    \pxmj@scan@num\pxmj@opt
+    \ifnum\pxmj@cnta=\pxmj@nan \pxmj@cnta\m@ne \fi
+    \ifnum\pxmj@cnta<\z@ \pxmj@err@ivnum
+    \else
+      \advance\pxmj@cnta-\pxmj@ibase
+      \ifnum\pxmj@cnta>\pxmj@iid@lmt \pxmj@mjargb@h
+      \else\ifnum\pxmj@cnta<\z@ \pxmj@mjargb@h
+      \else \chardef\pxmj@iid\pxmj@cnta
+      \fi\fi
+    \fi
+  \fi\fi
+  \pxmj@mjargb@a
+}
+\def\pxmj@mjargb@a#1{%
+  \pxmj@xpeek\pxmj@mjargb@b#1\pxmj@nil
+}
+\def\pxmj@mjargb@b{%
+  \pxmj@check@jachar\pxmj@ahead
+  \pxmj@cond\ifpxmj@ok\fi
+  {\pxmj@mjargb@c}{\pxmj@mjargb@g}%
+}
+\def\pxmj@mjargb@c#1{%
+  \def\pxmj@cbase{#1}%
+  \futurelet\pxmj@ahead\pxmj@mjargb@d
+}
+\def\pxmj@mjargb@d{%
+  \pxmj@check@jachar\pxmj@ahead
+  \pxmj@cond\ifpxmj@ok\fi
+  {\pxmj@mjargb@e}{\pxmj@mjargb@f}%
+}
+\def\pxmj@mjargb@e#1{%
+  \chardef\pxmj@ucivs`#1\relax % this is \kchardef
+  \ifnum\pxmj@ucivs<\pxmj@ucivs@min \let\pxmj@ucivs\pxmj@z
+  \else\ifnum\pxmj@ucivs>\pxmj@ucivs@max \let\pxmj@ucivs\pxmj@z
+  \fi\fi
+  \pxmj@mjargb@f
+}
+\def\pxmj@mjargb@f#1\pxmj@nil{%
+  \pxmj@mjargc
+}
+\def\pxmj@mjargb@g#1\pxmj@nil{%
+  \pxmj@scan@hexnum{#1}%
+  \ifnum\pxmj@cnta<\z@ \pxmj@cnta\pxmj@nan \fi
+  \ifnum\pxmj@cnta=\pxmj@nan
+    \pxmj@err@ivnum
+    \pxmj@mjmain@id
+  \else \let\pxmj@ucbase\pxmj@cnta
+  \fi
+  \pxmj@mjargc
+}
+\def\pxmj@mjargb@h{%
+  \begingroup
+    \advance\pxmj@cnta\pxmj@ibase
+    \@tempcnta\pxmj@iid@lmt \advance\@tempcnta\pxmj@ibase
+    \edef\pxmj@tmpa{{\the\pxmj@cnta}{\the\pxmj@ibase}{\the\@tempcnta}}%
+    \expandafter\pxmj@err@ivrngi\pxmj@tmpa
+  \endgroup
+}
+
+%% \pxmj@mjargc
+\def\pxmj@mjargc{%
+  \begingroup
+    \ifnum\pxmj@iid=\pxmj@iid@dflt
+      \ifnum\pxmj@ucivs=\z@  \let\pxmj@iid=\pxmj@iid@fb
+      \else
+        \@tempcnta\pxmj@ucivs \advance\@tempcnta-\pxmj@ucivs@min
+        \chardef\pxmj@iid\@tempcnta
+      \fi
+    \fi
+    \pxmj@mjmain
+  \endgroup
+}
+
+%% \pxmj@mjargd
+\def\pxmj@mjargd#1{%
+  \pxmj@scan@num{#1}%
+  \pxmj@mjmain@id
+}
+
+%--------------------------------------- glyph output
+
+%% \pxmj@geta@sym
+\chardef\pxmj@geta@sym\jis"\pxmj@geta@jiscode\relax
+
+%% \pxmj@mjmain
+\def\pxmj@mjmain{%
+  \ifnum\pxmj@iid=\pxmj@iid@fb % fallback
+    \pxmj@mjmain@b
+  \else\ifnum\pxmj@iid=\pxmj@iid@chc
+    \pxmj@color\pxmj@color@chc
+    \pxmj@mjmain@a
+    \pxmj@get@mjid@seq\pxmj@inucs\count@
+    \ifnum\pxmj@dcsr=\z@
+      \pxmj@mjmain@c
+    \else
+      \pxmj@mjmain@chc
+    \fi
+  \else
+    \pxmj@color\pxmj@color@n
+    \pxmj@mjmain@a
+    \pxmj@get@mjid\pxmj@inucs\count@\pxmj@iid
+    \ifnum\pxmj@g@cntr=\z@
+      \pxmj@mjmain@c
+    \else
+      \pxmj@exparg\MJInputByNumber{\pxmj@g@cntr}%
+      \ifpxmj@info \pxmj@mjmain@e \fi
+    \fi
+  \fi\fi
+}
+\def\pxmj@mjmain@a{%
+  \ifx\pxmj@cbase\relax \count@\pxmj@ucbase \let\pxmj@inucs=t%
+  \else \count@\expandafter`\pxmj@cbase \let\pxmj@inucs=f%
+  \fi
+}
+\def\pxmj@mjmain@b{%
+  \begingroup
+    \pxmj@color\pxmj@color@fb
+    \pxmj@mjmain@fb
+  \endgroup
+}
+\def\pxmj@mjmain@c{%
+  \pxmj@mjmain@d
+  \@tempcnta\pxmj@iid \advance\@tempcnta\pxmj@ibase
+  \edef\pxmj@tmpa{{\pxmj@tmpa}{\the\count@}%
+   {\ifnum\pxmj@iid=\pxmj@iid@chc\else (iid \the\@tempcnta) \fi}}%
+  \expandafter\pxmj@err@naiid\pxmj@tmpa
+  \pxmj@mjmain@b
+}
+\def\pxmj@mjmain@d{%
+  \ifx\pxmj@cbase\relax
+    \ifx\pxmj@hex\relax \def\pxmj@tmpa{U+????}%
+    \else \def\pxmj@tmpa{U+\pxmj@hex}%
+    \fi
+  \else \def\pxmj@tmpa{'\pxmj@cbase'}%
+  \fi
+}
+\def\pxmj@mjmain@e{%
+  \begingroup
+    \pxmj@mjmain@d
+    \@tempcntb\pxmj@iid\advance\@tempcntb\pxmj@ibase
+    \pxmj@info{\pxmj@tmpa\space IID \the\@tempcntb\space
+      = MJID \the\pxmj@g@cntr}%
+  \endgroup
+}
+
+%% \pxmj@mjmain@id
+\def\pxmj@mjmain@id{%
+  \begingroup
+    \ifnum\pxmj@cnta=\pxmj@nan
+      \pxmj@color\pxmj@color@fb \pxmj@geta@sym
+    \else
+      \pxmj@color\pxmj@color@n
+      \pxmj@exparg\MJInputByNumber{\the\pxmj@cnta}%
+    \fi
+  \endgroup
+}
+
+%% \pxmj@mjmain@fb
+\ifx u@\pxmj@jacode
+  \def\pxmj@mjmain@fb{%
+    \ifx\pxmj@cbase\relax \kchar\pxmj@ucbase
+    \else \pxmj@cbase \fi
+  }
+\else
+  \def\pxmj@mjmain@fb{%
+    \ifx\pxmj@cbase\relax
+      \ifx\pxmj@hex\relax \pxmj@geta@sym
+      \else \pxmj@exparg\MJFallbackByUnicode{\pxmj@hex}%
+      \fi
+    \else \pxmj@cbase \fi
+  }
+\fi
+
+%% \pxmj@mjmain@chc
+\def\pxmj@mjmain@chc{%
+  \let\do\pxmj@mjmain@chc@do
+  \pxmj@mjmain@d
+  \pxmj@print{>>>>>>>> Variant list for \pxmj@tmpa:}%
+  \leavevmode \penalty\@medpenalty
+  \let\pxmj@chc@sh\MJchoiceidyshift
+  \pxmj@chc@seq
+  \pxmj@print{>>>>>>>> End of list}%
+}
+\def\pxmj@mjmain@chc@do#1#2{%
+  \begingroup
+    \setbox\tw@\hbox{\MJInputByNumber{#2}}%
+    \dimen@\wd\tw@ \let\width\dimen@
+    \font\pxmj@tmpb=\MJchoiceidfont
+    \smash{\raise\pxmj@chc@sh\dimen@\hb@xt@\z@{%
+      \hb@xt@\dimen@{\hss\pxmj@tmpb#1\hss}\hss}}%
+    \box\tw@
+    \@tempcntb#1\relax\advance\@tempcntb\pxmj@ibase
+    \pxmj@print{IID \the\@tempcntb\space= MJID #2}%
+  \endgroup
+  \penalty\@medpenalty
+}
+
+\newcommand*\MJchoiceidfont{cmss8 at .5\width}
+\newcommand*\MJchoiceidyshift{-0.5}
+
+
+\def\pxmj@show@args{%
+  \bxDebug{result--->%
+    \pxmj@cbase/\the\pxmj@ucbase/\the\pxmj@iid
+  }%
+}
+
+%--------------------------------------- highlight
+
+%% variables
+\def\pxmj@color@fb{red}
+\def\pxmj@color@chc{blue}
+\let\pxmj@color@n\@empty
+
+%% \MJfallbackcolor{<color>}
+\newcommand*\MJfallbackcolor{%
+  \pxmj@set@color\pxmj@color@fb
+}
+
+%% \MJchoicecolor{<color>}
+\newcommand*\MJchoicecolor{%
+  \pxmj@set@color\pxmj@color@chc
+}
+
+%% \MJcolor{<color>}
+\newcommand*\MJcolor{%
+  \pxmj@set@color\pxmj@color@n
+}
+
+%% \pxmj@set@color\VAR{<color>}
+\def\pxmj@set@color#1#2{%
+  \edef#1{#2}%
+}
+
+%% \pxmj@color\VAR
+\def\pxmj@color#1{%
+  \ifx#1\@empty\else \color{#1}\fi
+}
+
+%% hook
+\AtBeginDocument{%
+  \ifpxmj@highlight\else
+    \let\pxmj@color\@gobble
+  \fi
+}
+
+%--------------------------------------- "driver"
+
+%%<+> \MJInputByNumber{<mjid>}
+\newcommand*\MJInputByNumber[1]{%
+  \MJMZM{#1}%
+}
+
+%%<+> \MJFallbackByUnicode{<code-hex>}
+\newcommand*\MJFallbackByUnicode[1]{%
+  \pxmj@geta@sym
+}
+\AtBeginDocument{%
+  \ifx\UI\@undefined
+    \ifx\UTF\@undefined\else
+      \let\MJFallbackByUnicode\UTF
+    \fi
+  \else \let\MJFallbackByUnicode\UI
+  \fi
+}
+
+%--------------------------------------- all done
+\endinput
+%% EOF
